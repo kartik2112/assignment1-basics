@@ -47,3 +47,30 @@ class RMSNorm(nn.Module):
 		# rms_norm = math.sqrt(((x*x).sum()) / self.d_model + self.eps)
 		rms_norm = (x.pow(2).mean(dim=-1, keepdim=True) + self.eps).sqrt()
 		return (x / rms_norm * self.gain).to(in_dtype)
+
+class SwiGLU(nn.Module):
+	def __init__(self, 
+			d_model: int,
+			d_ff: int,
+			device: torch.device | None = None, 
+			dtype: torch.dtype | None = None):
+		super().__init__()
+		self.device = device
+		self.dtype = dtype
+		self.d_ff = d_ff
+		self.w1 = nn.Parameter(
+			torch.empty((self.d_ff, d_model), device=self.device, dtype=self.dtype)
+		)
+		self.w3 = nn.Parameter(
+			torch.empty((self.d_ff, d_model), device=self.device, dtype=self.dtype)
+		)
+		self.w2 = nn.Parameter(
+			torch.empty((d_model, self.d_ff), device=self.device, dtype=self.dtype)
+		)
+
+	
+	def forward(self, x: torch.Tensor) -> torch.Tensor:
+		temp1 = einops.einsum(self.w1, x, 'd_ff d_model, ... d_model -> ... d_ff')
+		silu = temp1 * torch.sigmoid(temp1)
+		temp2 = silu * (x @ self.w3.T)
+		return einops.einsum(self.w2, temp2, 'd_model d_ff, ... d_ff -> ... d_model')

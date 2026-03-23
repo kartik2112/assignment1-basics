@@ -127,15 +127,58 @@ class MultiheadSelfAttention(nn.Module):
 		self.num_heads = num_heads
 		self.d_head = d_model // num_heads
 
-		self.w_qkv = nn.Linear(d_model, 3*d_model)
-		self.w_o = nn.Linear(self.d_model, self.d_model)
+		self.w_qkv = Linear(d_model, 3*d_model)
+		self.w_o = Linear(self.d_model, self.d_model)
 
 	def forward(self, x: torch.Tensor) -> torch.Tensor:
-		L = x.size(-2)
+		L = x.size(1)
 		qkv = self.w_qkv(x)
-		qkv_mh = einops.rearrange(qkv, 'B L (nH d_h) -> B nH L d_h')
-		Q, K, V = torch.chunk(qkv_mh, 3, dim=-1)
-		mask = torch.ones((L, L)).tril()
+		qkv_mh = einops.rearrange(qkv, 'B L (nH d_h) -> B nH L d_h', d_h=self.d_head)
+		Q, K, V = torch.chunk(qkv_mh, 3, dim=1)
+		mask = torch.ones((L, L), device=x.device).tril()
+		# mask = einops.rearrange(mask, 'seq seq -> 1 1 seq seq')
 		out = scaled_dot_product_attention(Q, K, V, mask)
 		out = einops.rearrange(out, 'B n_h L d_h -> B L (n_h d_h)')
 		return self.w_o(out)
+	
+class MultiheadSelfAttention_w_RoPE(nn.Module):
+	def __init__(self, d_model: int, num_heads: int, theta: float, max_seq_len: int):
+		super().__init__()
+		self.d_model = d_model
+		self.num_heads = num_heads
+		self.d_head = d_model // num_heads
+
+		self.rope = RoPE(theta=theta, d_k=self.d_head, max_seq_len=max_seq_len)
+
+		self.w_qkv = Linear(d_model, 3*d_model)
+		self.w_o = Linear(self.d_model, self.d_model)
+
+	def forward(self, x: torch.Tensor, token_positions: torch.Tensor) -> torch.Tensor:
+		L = x.size(1)
+		qkv = self.w_qkv(x)
+		qkv_mh = einops.rearrange(qkv, 'B L (nH d_h) -> B nH L d_h', d_h=self.d_head)
+		Q, K, V = torch.chunk(qkv_mh, 3, dim=1)
+		Q = self.rope(Q, token_positions)
+		K = self.rope(K, token_positions)
+		mask = torch.ones((L, L), device=x.device).tril()
+		# mask = einops.rearrange(mask, 'seq seq -> 1 1 seq seq')
+		out = scaled_dot_product_attention(Q, K, V, mask)
+		out = einops.rearrange(out, 'B n_h L d_h -> B L (n_h d_h)')
+		return self.w_o(out)
+	
+class TransformerBlock(nn.Module):
+	def __init__(self, d_model: int, num_heads: int, d_ff: int):
+		self.d_model = d_model
+		self.num_heads = num_heads
+		self.d_ff = d_ff
+		self.mha = MultiheadSelfAttention(d_model, num_heads)
+		self.ffn = Linear(d_model, d_ff)
+		self.rms1 = RMSNorm(d_model, eps=1e-5)
+		self.rms2 = RMSNorm(d_model, eps=1e-5)
+
+	def forward(self, x):
+		norm = self.rms1(x)
+		mha_out = self.mha(norm) + x
+
+		norm2 = self.rms2(mha_out)
+		return self.ffn(norm2) + x

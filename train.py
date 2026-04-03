@@ -9,6 +9,7 @@ from time import time
 
 from cs336_basics.data import get_batch
 from cs336_basics.model import cross_entropy, TransformerLM, AdamW, entropy_chunked, cosine_schedule, gradient_clipping
+from cs336_basics.generate import generate
 from tokenizers import Tokenizer
 
 class Logger:
@@ -19,10 +20,10 @@ class Logger:
 		self.logger.log(metrics, step)
 	
 	def log_text(self, key, text, step):
-		self.logger.log({key: self.logger.Html(text)}, step=step)
+		self.logger.log({key: wandb.Html(text)}, step=step)
 	
 	def log_table(self, key, table, step):
-		self.logger.log({key: self.logger.Table(dataframe=pd.DataFrame(table))}, step=step)
+		self.logger.log({key: wandb.Table(dataframe=pd.DataFrame(table))}, step=step)
 
 @torch.no_grad
 def evaluate(model, data_val, eval_iters, batch_size, context_length, device):
@@ -38,9 +39,9 @@ def evaluate(model, data_val, eval_iters, batch_size, context_length, device):
 	model.train()
 	mean_loss = np.mean(losses)
 	return {
-		"val/loss": mean_loss,
-		"val/ppl": np.exp(mean_loss),
-		"val/entropy": np.mean(entropies)
+		"val/loss": mean_loss.item(),
+		"val/ppl": np.exp(mean_loss).item(),
+		"val/entropy": np.mean(entropies).item()
 	}
 
 def train(
@@ -66,6 +67,7 @@ def train(
 ):
 	torch.manual_seed(13)
 	device_str = "mps" if torch.backends.mps.is_available() and torch.backends.mps.is_built() else "cuda" if torch.cuda.is_available() else "cpu"
+	print(f"Using device: {device_str}")
 	device = torch.device(device_str)
 
 	tokenizer = Tokenizer.from_file(tokenizer_path)
@@ -79,8 +81,9 @@ def train(
 		num_layers=num_layers,
 		num_heads=num_heads,
 		d_ff=d_ff, 
-		rope_theta=rope_theta).to(device)
-	optimizer = AdamW(model.parameters(), lr=learning_rate_min)
+		rope_theta=rope_theta)
+	model = model.to(device)
+	optimizer = AdamW(model.parameters(), lr=learning_rate_min, betas=(0.9, 0.95), weight_decay=0.01)
 	data_train = np.memmap(Path(data_path) / "train.bin", dtype=np.uint16, mode='r')
 	data_val = np.memmap(Path(data_path) / "val.bin", dtype=np.uint16, mode='r')
 
@@ -118,22 +121,61 @@ def train(
 			val_res = evaluate(model, data_val, eval_iters, batch_size, context_length, device)
 			logger.log_metrics(val_res, step=it)
 			tqdm.write(f"Val loss: {val_res['val/loss']:.4f}")
+
+	# Generation
+	context = torch.zeros([1,1], dtype=torch.long, device=device)
+	new_text_idxs = generate(
+		model=model,
+		idx=context,
+		max_new_tokens=1000,
+		block_size=context_length,
+		temperature=0.6,
+		top_p=0.95
+	)
+	generated_text = tokenizer.decode(new_text_idxs[0].tolist())
+	tqdm.write("\n---Generated text ---")
+	tqdm.write(generated_text)
+	logger.log_text("Generated Text", generated_text, step=training_epochs)
+
 if __name__ == "__main__":
 	train(
-		training_epochs=1000,
+		training_epochs=2000,
 		batch_size=64,
-		vocab_size=32000,
+		vocab_size=10000,
 		context_length=256,
 		d_model=512,
-		num_layers=6,
-		num_heads=8,
-		d_ff=2048,
+		num_layers=4,
+		num_heads=16,
+		d_ff=1344,
 		rope_theta=100000.0,
-		tokenizer_path=str(Path("tokenizers") / "owt_32000_tokenizer.json"),
-		data_path=str(Path("data") / "tokenized_data" / "owt"),
+		tokenizer_path=str(Path("tokenizers") / "TinyStoriesV2-GPT4-10000_tokenizer.json"),
+		data_path=str(Path("data") / "tokenized_data" / "TinyStoriesV2-GPT4"),
 		learning_rate_max=1e-3,
 		learning_rate_min=1e-5,
 		warmup_iters=100,
 		cosine_iters=900,
-		run_name="owt_32000_test"
+		run_name="TinyStories_10000_lr_sweep"
 	)
+
+	# experiment 1 - LRs: [1e-5, 3e-5, 1e-4, 3e-4, 1e-3, 3e-3, 6e-3, 1e-2, 3e-2
+	lrs = [1e-5, 3e-5, 1e-4, 3e-4, 1e-3, 3e-3, 6e-3, 1e-2, 3e-2]
+	for lr in lrs:
+		train(
+			training_epochs=3000,
+			batch_size=64,
+			vocab_size=10000,
+			context_length=256,
+			d_model=512,
+			num_layers=4,
+			num_heads=16,
+			d_ff=1344,
+			rope_theta=100000.0,
+			tokenizer_path=str(Path("tokenizers") / "TinyStoriesV2-GPT4-10000_tokenizer.json"),
+			data_path=str(Path("data") / "tokenized_data" / "TinyStoriesV2-GPT4"),
+			learning_rate_max=lr,
+			learning_rate_min=lr / 10,
+			warmup_iters=500,
+			cosine_iters=900,
+			run_name=f"TinyStories_10000_lr={lr}"
+		)
+		

@@ -162,3 +162,7 @@ cython_debug/
 .ruff_cache/
 *.zip
 *.txt
+
+tokenizers
+data
+wandb

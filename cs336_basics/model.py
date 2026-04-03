@@ -249,10 +249,10 @@ class TransformerLM(nn.Module):
 		self.ln_final = RMSNorm(d_model)
 		self.lm_head = Linear(d_model, vocab_size)
 	
-	def forward(self, x_indices: torch.Tensor) -> torch.Tensor:
+	def forward(self, x_indices: torch.Tensor, token_positions: torch.Tensor = None) -> torch.Tensor:
 		x = self.token_embeddings(x_indices)
 		for layer in self.layers:
-			x = layer(x)
+			x = layer(x, token_positions)
 		x = self.ln_final(x)
 		return self.lm_head(x)
 	
@@ -272,6 +272,14 @@ def cross_entropy(o: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
 	o = o - o.max(dim=-1, keepdim=True).values
 	log_probs = o - torch.logsumexp(o, dim=-1, keepdim=True)
 	return -log_probs.gather(dim=-1, index=x.unsqueeze(-1)).squeeze(-1).mean()
+
+def entropy_chunked(x: torch.Tensor, chunk_size: int=128) -> torch.Tensor:
+	num_chunks = math.ceil(x.size(1) / chunk_size)
+	chunk_entropies = []
+	for i in range(num_chunks):
+		chunk_probs = x[:,i*chunk_size:(i+1)*chunk_size,:].softmax(dim=-1)
+		chunk_entropies.append((-chunk_probs * chunk_probs.log()).sum(dim=-1))
+	return torch.cat(chunk_entropies, dim=1)
 
 class AdamW(torch.optim.Optimizer):
 	def __init__(self, params: Iterable[torch.nn.Parameter], lr: float=1e-3, betas: tuple=(0.9, 0.999), eps: float=1e-8, weight_decay: float=1e-5):
@@ -340,3 +348,4 @@ def gradient_clipping(parameters: Iterable[nn.Parameter], l2_norm_max: float, ep
 		for p in parameters:
 			if p.grad is not None:
 				p.grad.data.mul_(clip_coeff)
+	return grad

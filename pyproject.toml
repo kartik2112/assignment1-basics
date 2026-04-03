@@ -21,6 +21,8 @@ dependencies = [
     "ty>=0.0.1a16",
     "scalene>=2.1.4",
     "pyinstrument>=5.1.2",
+    "tokenizers>=0.22.2",
+    "pandas>=3.0.2",
 ]
 
 [build-system]

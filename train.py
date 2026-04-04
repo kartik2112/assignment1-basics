@@ -59,11 +59,11 @@ def train(
 		learning_rate_max: float,
 		learning_rate_min: float,
 		warmup_iters: int,
-		cosine_iters: int,
+		# cosine_iters: int,
 		run_name: str,
 		log_interval: int=10,
 		eval_interval: int=50,
-		eval_iters: int=200
+		eval_iters: int=50
 ):
 	torch.manual_seed(13)
 	device_str = "mps" if torch.backends.mps.is_available() and torch.backends.mps.is_built() else "cuda" if torch.cuda.is_available() else "cpu"
@@ -93,14 +93,14 @@ def train(
 
 	for it in range(training_epochs):
 		x, y = get_batch(data_train, batch_size, context_length, device)
-		lr = cosine_schedule(it, learning_rate_max, learning_rate_min, warmup_iters, cosine_iters)
+		lr = cosine_schedule(it, learning_rate_max, learning_rate_min, warmup_iters, training_epochs)
 		for param_group in optimizer.param_groups:
 			param_group['lr'] = lr
 
 		logits = model(x)
 		loss = cross_entropy(logits, y)
 
-		optimizer.zero_grad()
+		optimizer.zero_grad(set_to_none=True)
 		loss.backward()
 		grad_norm = gradient_clipping(model.parameters(), l2_norm_max=1.0)
 		optimizer.step()
@@ -136,29 +136,30 @@ def train(
 	tqdm.write("\n---Generated text ---")
 	tqdm.write(generated_text)
 	logger.log_text("Generated Text", generated_text, step=training_epochs)
+	logger.logger.finish()
 
 if __name__ == "__main__":
-	train(
-		training_epochs=2000,
-		batch_size=64,
-		vocab_size=10000,
-		context_length=256,
-		d_model=512,
-		num_layers=4,
-		num_heads=16,
-		d_ff=1344,
-		rope_theta=100000.0,
-		tokenizer_path=str(Path("tokenizers") / "TinyStoriesV2-GPT4-10000_tokenizer.json"),
-		data_path=str(Path("data") / "tokenized_data" / "TinyStoriesV2-GPT4"),
-		learning_rate_max=1e-3,
-		learning_rate_min=1e-5,
-		warmup_iters=100,
-		cosine_iters=900,
-		run_name="TinyStories_10000_lr_sweep"
-	)
+	# train(
+	# 	training_epochs=2000,
+	# 	batch_size=64,
+	# 	vocab_size=10000,
+	# 	context_length=256,
+	# 	d_model=512,
+	# 	num_layers=4,
+	# 	num_heads=16,
+	# 	d_ff=1344,
+	# 	rope_theta=100000.0,
+	# 	tokenizer_path=str(Path("tokenizers") / "TinyStoriesV2-GPT4-10000_tokenizer.json"),
+	# 	data_path=str(Path("data") / "tokenized_data" / "TinyStoriesV2-GPT4"),
+	# 	learning_rate_max=1e-3,
+	# 	learning_rate_min=1e-5,
+	# 	warmup_iters=100,
+	# 	cosine_iters=900,
+	# 	run_name="TinyStories_10000_lr_sweep"
+	# )
 
 	# experiment 1 - LRs: [1e-5, 3e-5, 1e-4, 3e-4, 1e-3, 3e-3, 6e-3, 1e-2, 3e-2
-	lrs = [1e-5, 3e-5, 1e-4, 3e-4, 1e-3, 3e-3, 6e-3, 1e-2, 3e-2]
+	lrs = [3e-4, 1e-3, 3e-3, 6e-3, 1e-2, 3e-2]
 	for lr in lrs:
 		train(
 			training_epochs=3000,
@@ -175,7 +176,7 @@ if __name__ == "__main__":
 			learning_rate_max=lr,
 			learning_rate_min=lr / 10,
 			warmup_iters=500,
-			cosine_iters=900,
+			# cosine_iters=1500,
 			run_name=f"TinyStories_10000_lr={lr}"
 		)
 		

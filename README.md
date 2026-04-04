@@ -48,3 +48,4 @@ gunzip owt_valid.txt.gz
 cd ..
 ```
 
+Main Reference for Solution: https://github.com/donglinkang2021/cs336-assignment1-basics/blob/c7bd4a373c1c56fc6cb02cc3f848c13d02a2b825/train.py

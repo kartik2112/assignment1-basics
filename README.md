@@ -49,3 +49,7 @@ cd ..
 ```
 
 Main Reference for Solution: https://github.com/donglinkang2021/cs336-assignment1-basics/blob/c7bd4a373c1c56fc6cb02cc3f848c13d02a2b825/train.py
+
+Reference LR hyperparameter Tuning: https://wandb.ai/donglinkang2021-beijing-institute-of-technology/cs336-assignment1-basics/reports/Tune-the-learning-rate--VmlldzoxNDY4NjcwOA?accessToken=w9a9985kvwv2tfno7m6g8qir0j1mbn2lnqsvon0ihdhgzs02tn8g2bdu0jmun0oq
+
+My LR hyperparameter Tuning: https://wandb.ai/kshenoy/cs336-assignment1-basics/reports/Stanford-CS336-Assignment-1-LR-Hyperparameter-Tuning--VmlldzoxNjQxNzg3MA
